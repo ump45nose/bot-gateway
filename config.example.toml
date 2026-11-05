@@ -1,0 +1,55 @@
+host = "127.0.0.1"
+port = 18198
+state_dir = "/data"
+admin_token_file = "/run/secrets/admin-token"
+proxy = "http://127.0.0.1:7890"
+
+# 每个真实 Bot 只配置一次。添加第二个 Bot 时另建 bots.<名称> 和对应绑定。
+[bots.notice]
+token_file = "/run/secrets/notice-real-token"
+allowed_users = [123456789]
+initially_active = false # 完成旧接收端迁移后，用管理接口首次启用；后续重启保留启用状态和游标。
+
+[apps.moviepilot]
+mode = "poll" # 原 SDK 使用独立凭据调用 Gateway 的 /bot<凭据>/getUpdates。
+
+[apps.favsync]
+mode = "webhook"
+endpoint = "http://127.0.0.1:18082/v1/telegram/crawl/webhook"
+secret_file = "/run/secrets/favsync-webhook-secret"
+
+[apps.notices]
+mode = "send" # 仅发送通知，无接收权限。
+
+[[bindings]]
+name = "notice-moviepilot"
+bot = "notice"
+app = "moviepilot"
+credential_file = "/run/secrets/moviepilot-key" # <真实 bot 数字 ID>:<应用专属随机字符串>
+default = true
+capabilities = ["send", "files", "commands", "topics"]
+
+[[bindings]]
+name = "notice-favsync"
+bot = "notice"
+app = "favsync"
+credential_file = "/run/secrets/favsync-key"
+commands = ["crawl", "crawl_status", "crawl_cancel", "crawl_resume", "crawl_retry", "chats"]
+callback_prefixes = ["fc:"]
+telegram_links = true
+date_ranges = true
+menu = [{ command = "crawl", description = "发送群链接，选择范围开始归档" }, { command = "crawl_status", description = "查询最近归档进度" }]
+
+[[bindings]]
+name = "notice-notices"
+bot = "notice"
+app = "notices"
+credential_file = "/run/secrets/notices-key"
+capabilities = ["send", "topics"]
+
+# 可选 topic 路由：在接收绑定上设置 topics = [{chat_id = 123456789, thread_id = 42}]。
+# 命令、按钮归属和显式内容路由优先于 topic；出站也限制在这些 topic。
+# 会在操作中重启自身的旧控制脚本可设 poll_limit=1、infer_thread="serial"、ack_on_delivery=true，
+# 领取后不自动重放操作；普通应用保留默认 offset 确认，Webhook 应用按业务幂等确认。
+# 管理状态：GET /v1/admin/status；首次启用：POST /v1/admin/bots/notice/active，JSON {"active":true}。
+# 管理接口使用 Authorization: Bearer <admin-token>；首次启用跳过切换前的旧更新，后续重启不丢队列。
