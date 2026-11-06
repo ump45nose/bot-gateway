@@ -25,6 +25,7 @@ mode = "send" # 仅发送通知，无接收权限。
 name = "notice-moviepilot"
 bot = "notice"
 app = "moviepilot"
+command_prefix = "mp" # 对外显示 /mp_*，投递时还原为应用原生命令。
 credential_file = "/run/secrets/moviepilot-key" # <真实 bot 数字 ID>:<应用专属随机字符串>
 default = true
 capabilities = ["send", "files", "commands", "topics"]
@@ -33,12 +34,13 @@ capabilities = ["send", "files", "commands", "topics"]
 name = "notice-favsync"
 bot = "notice"
 app = "favsync"
+command_prefix = "tg"
 credential_file = "/run/secrets/favsync-key"
 commands = ["crawl", "crawl_status", "crawl_cancel", "crawl_resume", "crawl_retry", "chats"]
 callback_prefixes = ["fc:"]
 telegram_links = true
 date_ranges = true
-menu = [{ command = "crawl", description = "发送群链接，选择范围开始归档" }, { command = "crawl_status", description = "查询最近归档进度" }]
+menu = [{ command = "chats", description = "归档：选择群组，支持单选和多选" }, { command = "crawl", description = "归档：使用群链接或群 ID" }, { command = "crawl_status", description = "归档：查询最近任务进度" }]
 
 [[bindings]]
 name = "notice-notices"
@@ -51,5 +53,7 @@ capabilities = ["send", "topics"]
 # 命令、按钮归属和显式内容路由优先于 topic；出站也限制在这些 topic。
 # 会在操作中重启自身的旧控制脚本可设 poll_limit=1、infer_thread="serial"、ack_on_delivery=true，
 # 领取后不自动重放操作；普通应用保留默认 offset 确认，Webhook 应用按业务幂等确认。
+# ShellCrash 接收绑定设置 command_prefix="sc"；对外 /sc_crash，原生脚本仍收到 /crash。
+# 旧的未加前缀命令保留路由兼容，但不会出现在统一命令菜单。
 # 管理状态：GET /v1/admin/status；首次启用：POST /v1/admin/bots/notice/active，JSON {"active":true}。
 # 管理接口使用 Authorization: Bearer <admin-token>；首次启用跳过切换前的旧更新，后续重启不丢队列。

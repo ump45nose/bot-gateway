@@ -12,6 +12,7 @@ import requests
 from .router import choose
 from .store import Store
 from .upstream import Upstream
+from .commands import application_update, public_name
 
 log = logging.getLogger('bot-gateway')
 READ = {'getMe', 'getFile', 'getChat', 'getChatMember', 'getChatAdministrators', 'getUserProfilePhotos'}
@@ -157,7 +158,7 @@ class Gateway:
                     updates = self.store.poll(binding['name'], offset, limit,
                                               ack_on_delivery=binding.get('ack_on_delivery', False))
                     if updates or time.monotonic() >= deadline:
-                        return 200, {'ok': True, 'result': updates}
+                        return 200, {'ok': True, 'result': [application_update(binding, u) for u in updates]}
                     self.changed.wait(min(1, max(0, deadline-time.monotonic())))
             return 200, {'ok': True, 'result': []}
         finally:
@@ -175,7 +176,8 @@ class Gateway:
                 self.stop.wait(.5)
                 continue
             try:
-                response = self.upstream.session(external=False).post(app['endpoint'], data=row['body'].encode(),
+                payload = application_update(binding, json.loads(row['body']))
+                response = self.upstream.session(external=False).post(app['endpoint'], data=json.dumps(payload).encode(),
                     headers={'Content-Type': 'application/json', app['secret_header']: app['webhook_secret'],
                              'X-Telegram-Bot-Id': str(self.cfg['bots'][binding['bot']]['id']),
                              'X-Telegram-Bot-Username': json.loads(self.store.bot(binding['bot'])['identity'] or '{}').get('username', '')},
@@ -334,6 +336,7 @@ class Gateway:
             commands = json.loads(commands) if isinstance(commands, str) else commands
             if not isinstance(commands, list) or len(commands) > 100 or any(
                     not isinstance(c, dict) or not re.fullmatch(r'[a-z0-9_]{1,32}', c.get('command', '')) or
+                    not re.fullmatch(r'[a-z0-9_]{1,32}', public_name(binding, c.get('command', ''))) or
                     not isinstance(c.get('description'), str) or not 1 <= len(c['description']) <= 256 for c in commands):
                 raise ValueError()
             with self.store.db() as db:
@@ -360,15 +363,17 @@ class Gateway:
                         rows = {b['name']: db.execute('SELECT * FROM commands WHERE binding=?', (b['name'],)).fetchall() for b in bindings}
                     scopes.update((r['scope'], r['language']) for values in rows.values() for r in values)
                     okay = True
-                    claimed = {command: b['name'] for b in bindings for command in b['commands']}
+                    claimed = {public_name(b, command): b['name'] for b in bindings for command in
+                               set(b['commands']) | {item['command'] for item in b['menu']}}
                     for scope, language in scopes:
                         merged = {}
                         for b in bindings:
                             selected = [r for r in rows[b['name']] if (r['scope'], r['language']) == (scope, language)]
                             commands = json.loads(selected[0]['body']) if selected else b['menu'] if scope == '{"type":"default"}' and not language else []
                             for command in commands:
-                                if claimed.get(command['command'], b['name']) == b['name']:
-                                    merged.setdefault(command['command'], command)
+                                name = public_name(b, command['command'])
+                                if claimed.get(name, b['name']) == b['name']:
+                                    merged.setdefault(name, {**command, 'command': name})
                         if len(merged) > 100:
                             raise ValueError('too_many_commands')
                         status, result = self.upstream.api(bot, 'setMyCommands', {'commands': list(merged.values()),

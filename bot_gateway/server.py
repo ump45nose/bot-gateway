@@ -62,6 +62,7 @@ def fields(body, content_type):
 def server(gateway):
     class Handler(BaseHTTPRequestHandler):
         server_version = 'BotGateway/1'
+        protocol_version = 'HTTP/1.1'
 
         def log_message(self, *_):
             # Native Bot API paths contain application credentials.
@@ -73,6 +74,9 @@ def server(gateway):
             self.send_response(status)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Cache-Control', 'no-store')
+            if status >= 400:
+                self.send_header('Connection', 'close')
+                self.close_connection = True
             self.send_header('Content-Length', str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
@@ -150,6 +154,8 @@ def server(gateway):
                     self.send_response(response.status_code)
                     self.send_header('Content-Type', response.headers.get('Content-Type', 'application/octet-stream'))
                     self.send_header('Cache-Control', 'no-store')
+                    self.send_header('Connection', 'close')
+                    self.close_connection = True
                     self.end_headers()
                     for chunk in response.iter_content(65536):
                         self.wfile.write(chunk)

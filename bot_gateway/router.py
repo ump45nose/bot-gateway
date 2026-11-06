@@ -37,7 +37,12 @@ def choose(cfg, store, bot, update):
             import json
             if command[1].casefold() != json.loads(identity).get('username', '').casefold():
                 return None, 'other_bot_command', ctx
-        matches = [b for b in configured if command[0][1:] in b['commands']]
+        matches = [b for b in configured if b.get('command_prefix') and
+                   command[0][1:].startswith(b['command_prefix'] + '_')]
+        if matches:
+            return single([b for b in matches if b in candidates], 'command_namespace', ctx)
+        matches = [b for b in configured if command[0][1:] in b['commands'] or
+                   command[0][1:] in {item['command'] for item in b['menu']}]
         if matches:
             return single([b for b in matches if b in candidates], 'command_route', ctx)
     else:

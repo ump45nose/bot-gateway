@@ -4,6 +4,8 @@ import tomllib
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .commands import public_name
+
 NAME = re.compile(r'[a-z][a-z0-9_-]{0,63}')
 COMMAND = re.compile(r'[a-z0-9_]{1,32}')
 
@@ -76,6 +78,12 @@ def load(path):
         binding.setdefault('default', False)
         binding.setdefault('telegram_links', False)
         binding.setdefault('date_ranges', False)
+        binding.setdefault('command_prefix', '')
+        if binding['command_prefix'] and not re.fullmatch(r'[a-z][a-z0-9]{0,11}', binding['command_prefix']):
+            raise ValueError('invalid command namespace')
+        if any(not COMMAND.fullmatch(public_name(binding, name)) for name in
+               binding['commands'] + [item.get('command', '') for item in binding['menu']]):
+            raise ValueError('namespaced command exceeds Telegram limits')
         binding.setdefault('capabilities', ['send', 'files', 'commands'])
         if not 1 <= binding.get('poll_limit', 100) <= 100 or binding.get('infer_thread', '') not in ('', 'serial', 'unique'):
             raise ValueError('invalid polling or reply context settings')
@@ -94,11 +102,17 @@ def load(path):
         selected = [b for b in bindings.values() if b['bot'] == bot]
         if not selected or sum(bool(b['default']) for b in selected) > 1:
             raise ValueError('bot needs bindings and at most one default route')
-        commands, topics = set(), set()
+        commands, topics, prefixes = set(), set(), set()
         for binding in selected:
-            if commands & set(binding['commands']):
+            public = {public_name(binding, name) for name in binding['commands']}
+            if commands & public:
                 raise ValueError('command route collision')
-            commands.update(binding['commands'])
+            commands.update(public)
+            prefix = binding['command_prefix']
+            if prefix and prefix in prefixes:
+                raise ValueError('command namespace collision')
+            if prefix:
+                prefixes.add(prefix)
             for topic in binding['topics']:
                 identity = (str(topic['chat_id']), int(topic['thread_id']))
                 if identity in topics:
